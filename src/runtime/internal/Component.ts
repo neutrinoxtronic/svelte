@@ -101,6 +101,9 @@ export function init(component, options, instance, create_fragment, not_equal, p
 	set_current_component(component);
 
 	const prop_values = options.props || {};
+	if (options.slots) {
+		prop_values.$$slots = options.slots;
+	}
 
 	const $$: T$$ = component.$$ = {
 		fragment: null,
