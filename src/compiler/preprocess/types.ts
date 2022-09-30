@@ -14,6 +14,7 @@ export interface Processed {
 	code: string;
 	map?: string | object; // we are opaque with the type here to avoid dependency on the remapping module for our public types.
 	dependencies?: string[];
+	attributes?: Record<string, string | boolean>;
 	toString?: () => string;
 }
 
@@ -38,6 +39,7 @@ export type Preprocessor = (options: {
 export interface PreprocessorGroup {
 	markup?: MarkupPreprocessor;
 	style?: Preprocessor;
+	expression?: Preprocessor;
 	script?: Preprocessor;
 }
 
