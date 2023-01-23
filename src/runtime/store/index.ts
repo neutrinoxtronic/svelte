@@ -9,20 +9,26 @@ export type Unsubscriber = () => void;
 /** Callback to update a value. */
 export type Updater<T> = (value: T) => T;
 
-/** Cleanup logic callback. */
-type Invalidator<T> = (value?: T) => void;
+/**
+ * Callback to inform that the store has an invalid value.
+ * 
+ * "Invalid" means that a dependency's value has been updated,
+ * so this store's value should be updated.
+*/
+type Invalidator = () => void;
+/** Callback to inform that the store has a valid value. */
+type Revalidator = () => void;
 
 /** Start and stop notification callbacks. */
-export type StartStopNotifier<T> = (set: Subscriber<T>) => Unsubscriber | void;
+export type StartStopNotifier<T> = (set: Subscriber<T>, invalidate: Invalidator, revalidate: Revalidator) => Unsubscriber | void;
 
 /** Readable interface for subscribing. */
 export interface Readable<T> {
 	/**
 	 * Subscribe on value changes.
 	 * @param run subscription callback
-	 * @param invalidate cleanup callback
 	 */
-	subscribe(this: void, run: Subscriber<T>, invalidate?: Invalidator<T>): Unsubscriber;
+	subscribe(this: void, run: Subscriber<T>, invalidate?: Invalidator, revalidate?: Revalidator): Unsubscriber;
 }
 
 /** Writable interface for both updating and subscribing. */
@@ -40,8 +46,7 @@ export interface Writable<T> extends Readable<T> {
 	update(this: void, updater: Updater<T>): void;
 }
 
-/** Pair of subscriber and invalidator. */
-type SubscribeInvalidateTuple<T> = [Subscriber<T>, Invalidator<T>];
+type Subscription<T> = [Subscriber<T>, Invalidator, Revalidator];
 
 const subscriber_queue = [];
 
@@ -63,16 +68,29 @@ export function readable<T>(value?: T, start?: StartStopNotifier<T>): Readable<T
  */
 export function writable<T>(value?: T, start: StartStopNotifier<T> = noop): Writable<T> {
 	let stop: Unsubscriber;
-	const subscribers: Set<SubscribeInvalidateTuple<T>> = new Set();
+	const subscriptions: Set<Subscription<T>> = new Set();
+
+	function invalidate_writable() {
+		// Inform all subscribers that this store has an invalid value
+		for (const subscription of subscriptions) {
+			subscription[1]();
+		}
+	}
+	function revalidate_writable() {
+		// Inform all subscribers that this store has a valid value
+		for (const subscription of subscriptions) {
+			subscription[2]();
+		}
+	}
 
 	function set(new_value: T): void {
 		if (safe_not_equal(value, new_value)) {
 			value = new_value;
 			if (stop) { // store is ready
 				const run_queue = !subscriber_queue.length;
-				for (const subscriber of subscribers) {
-					subscriber[1]();
-					subscriber_queue.push(subscriber, value);
+				invalidate_writable();
+				for (const subscription of subscriptions) {
+					subscriber_queue.push(subscription, value);
 				}
 				if (run_queue) {
 					for (let i = 0; i < subscriber_queue.length; i += 2) {
@@ -81,6 +99,8 @@ export function writable<T>(value?: T, start: StartStopNotifier<T> = noop): Writ
 					subscriber_queue.length = 0;
 				}
 			}
+		} else {
+			revalidate_writable();
 		}
 	}
 
@@ -88,17 +108,17 @@ export function writable<T>(value?: T, start: StartStopNotifier<T> = noop): Writ
 		set(fn(value));
 	}
 
-	function subscribe(run: Subscriber<T>, invalidate: Invalidator<T> = noop): Unsubscriber {
-		const subscriber: SubscribeInvalidateTuple<T> = [run, invalidate];
-		subscribers.add(subscriber);
-		if (subscribers.size === 1) {
-			stop = start(set) || noop;
+	function subscribe(run: Subscriber<T>, invalidate: Invalidator = noop, revalidate: Revalidator = noop): Unsubscriber {
+		const subscription: Subscription<T> = [run, invalidate, revalidate];
+		subscriptions.add(subscription);
+		if (subscriptions.size === 1) {
+			stop = start(set, invalidate_writable, revalidate_writable) || noop;
 		}
 		run(value);
 
 		return () => {
-			subscribers.delete(subscriber);
-			if (subscribers.size === 0) {
+			subscriptions.delete(subscription);
+			if (subscriptions.size === 0) {
 				stop();
 				stop = null;
 			}
@@ -163,7 +183,7 @@ export function derived<T>(stores: Stores, fn: Function, initial_value?: T): Rea
 
 	const auto = fn.length < 2;
 
-	return readable(initial_value, (set) => {
+	return readable(initial_value, (set, invalidate, revalidate) => {
 		let inited = false;
 		const values = [];
 
@@ -193,9 +213,19 @@ export function derived<T>(stores: Stores, fn: Function, initial_value?: T): Rea
 				}
 			},
 			() => {
+				const invalidated = pending;
 				pending |= (1 << i);
-			})
-		);
+				if (!invalidated) {
+					invalidate();
+				}
+			},
+			() => {
+				pending &= ~(1 << i);
+				if (!pending) {
+					revalidate();
+				}
+			}
+		));
 
 		inited = true;
 		sync();
