@@ -204,6 +204,10 @@ export default class BindingWrapper {
 					update_dom = null;
 					mount_dom = null;
 				}
+
+			case 'scrollTop':
+			case 'scrollLeft':
+				update_dom = null;
 		}
 
 		if (update_dom) {
