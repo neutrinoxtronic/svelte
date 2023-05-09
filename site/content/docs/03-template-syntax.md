@@ -1602,22 +1602,30 @@ Note that explicitly passing in an empty named slot will add that slot's name to
 
 ---
 
-Slots can be rendered zero or more times and can pass values *back* to the parent using props. The parent exposes the values to the slot template using the `let:` directive.
+Slots can be rendered zero or more times.
 
+The `let:` directive gives a slot template access to variables defined in the component that they are provided to.
 The usual shorthand rules apply — `let:item` is equivalent to `let:item={item}`, and `<slot {item}>` is equivalent to `<slot item={item}>`.
 
 ```sv
 <!-- FancyList.svelte -->
+<!-- This component passes data to its child slot using the `itemData` prop -->
 <ul>
 	{#each items as item}
 		<li class="fancy">
-			<slot prop={item}></slot>
+			<slot itemData={item}></slot>
 		</li>
 	{/each}
 </ul>
 
 <!-- App.svelte -->
-<FancyList {items} let:prop={thing}>
+<!-- `itemData` can now be used in the content you pass into the slot using `let:itemData` -->
+<FancyList {items} let:itemData>
+	<div>{itemData.text}</div>
+</FancyList>
+
+<!-- You can also rename it using the `let:itemData={thing}` syntax. -->
+<FancyList {items} let:itemData={thing}>
 	<div>{thing.text}</div>
 </FancyList>
 ```
