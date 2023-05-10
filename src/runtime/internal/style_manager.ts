@@ -20,6 +20,30 @@ function hash(str: string) {
 	return hash >>> 0;
 }
 
+export function create_static_rule(node: Element & ElementCSSInlineStyle, rule: string) {
+	const class_name = `__svelte_${hash(rule)}`;
+	const doc = node.ownerDocument;
+	const { stylesheet, rules } = managed_styles.get(doc) || create_style_information(doc, node);
+
+	if (!rules[class_name]) {
+		rules[class_name] = true;
+		stylesheet.insertRule(`.${class_name} {${rule}}`, stylesheet.cssRules.length);
+	}
+
+	node.classList.add(class_name);
+
+	active += 1;
+	return class_name;
+}
+
+export function delete_static_rule(node: Element & ElementCSSInlineStyle, name: string) {
+	if (name) {
+		node.classList.remove(name); // remove specific class
+	}
+	active -= 1;
+	if (!active) clear_rules();
+}
+
 function create_style_information(doc: Document | ShadowRoot, node: Element & ElementCSSInlineStyle) {
 	const info = { stylesheet: append_empty_stylesheet(node), rules: {} };
 	managed_styles.set(doc, info);

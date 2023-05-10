@@ -4,6 +4,7 @@ import { assign, split_css_unit, is_function } from 'svelte/internal';
 export type EasingFunction = (t: number) => number;
 
 export interface TransitionConfig {
+	static_css?: string;
 	delay?: number;
 	duration?: number;
 	easing?: EasingFunction;
@@ -120,12 +121,14 @@ export function slide(node: Element, {
 	const margin_end_value = parseFloat(style[`margin${capitalized_secondary_properties[1]}`]);
 	const border_width_start_value = parseFloat(style[`border${capitalized_secondary_properties[0]}Width`]);
 	const border_width_end_value = parseFloat(style[`border${capitalized_secondary_properties[1]}Width`]);
+	const display_override = style.display.includes('table') ? 'display:block;' : '';
+
 	return {
 		delay,
 		duration,
 		easing,
+		static_css: display_override + 'overflow:hidden;',
 		css: t =>
-			'overflow: hidden;' +
 			`opacity: ${Math.min(t * 20, 1) * opacity};` +
 			`${primary_property}: ${t * primary_property_value}px;` +
 			`padding-${secondary_properties[0]}: ${t * padding_start_value}px;` +
