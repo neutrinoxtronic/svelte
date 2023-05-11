@@ -12,6 +12,7 @@ import {
 	run_all,
 	safe_not_equal,
 	set_data,
+	set_input_value,
 	space,
 	text
 } from "svelte/internal";
@@ -169,6 +170,7 @@ function create_fragment(ctx) {
 		},
 		m(target, anchor) {
 			insert(target, input0, anchor);
+			set_input_value(input0, /*name*/ ctx[0]);
 			insert(target, t0, anchor);
 			insert(target, input1, anchor);
 			insert(target, t1, anchor);
