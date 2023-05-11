@@ -252,7 +252,7 @@ export function space() {
 }
 
 export function empty() {
-	return text('');
+	return document.createComment('');
 }
 
 export function comment(content: string) {
