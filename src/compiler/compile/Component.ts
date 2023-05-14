@@ -1360,6 +1360,21 @@ export default class Component {
 				let scope = this.instance_scope;
 				const map = this.instance_scope_map;
 
+				const assignee_stack: Array<{
+					has_mutated_assignee: boolean,
+				}> = [];
+
+				const new_assignee_stack = () => assignee_stack.push({
+					has_mutated_assignee: false,
+				});
+
+				const update_assignee_stack = (name) => {
+					const variable = component.var_lookup.get(name);
+					if (variable) {
+						if (variable.mutated) assignee_stack[assignee_stack.length - 1].has_mutated_assignee = true;
+					}
+				};
+
 				walk(node.body, {
 					enter(node: Node, parent) {
 						if (map.has(node)) {
@@ -1369,9 +1384,13 @@ export default class Component {
 						if (node.type === 'AssignmentExpression') {
 							const left = get_object(node.left);
 
+							new_assignee_stack();
+
 							extract_identifiers(left).forEach(node => {
 								assignee_nodes.add(node);
 								assignees.add(node.name);
+
+								update_assignee_stack(node.name);								
 							});
 
 							if (node.operator !== '=') {
@@ -1380,6 +1399,8 @@ export default class Component {
 						} else if (node.type === 'UpdateExpression') {
 							const identifier = get_object(node.argument);
 							assignees.add(identifier.name);
+							new_assignee_stack();
+							update_assignee_stack(identifier.name);
 						} else if (is_reference(node as NodeWithPropertyDefinition, parent as NodeWithPropertyDefinition)) {
 							const identifier = get_object(node);
 							if (!assignee_nodes.has(identifier)) {
@@ -1394,6 +1415,9 @@ export default class Component {
 										should_add_as_dependency = false;
 										module_dependencies.add(name);
 									}
+                  if (owner === component.instance_scope && assignee_stack.length) {
+									  if (assignee_stack[assignee_stack.length - 1].has_mutated_assignee) variable.mutated = true;
+								  }
 								}
 								const is_writable_or_mutated =
 									variable && (variable.writable || variable.mutated);
@@ -1413,6 +1437,9 @@ export default class Component {
 					leave(node: Node) {
 						if (map.has(node)) {
 							scope = scope.parent;
+						}
+						if (node.type === 'AssignmentExpression' || node.type === 'UpdateExpression') {
+							assignee_stack.pop();
 						}
 					}
 				});
