@@ -35,14 +35,12 @@ export default {
 
 			component.show = true;
 
-			return thePromise.then(() => {
-				assert.htmlEqual(
-					target.innerHTML,
-					`
-						<p>the value is 42</p>
-					`
-				);
-			});
+			return assert.htmlEqual(
+				target.innerHTML,
+				`
+					<p>the value is 42</p>
+				`
+			);
 		});
 	}
 };

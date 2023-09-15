@@ -3,6 +3,9 @@ import { check_outros, group_outros, transition_in, transition_out } from './tra
 import { flush } from './scheduler.js';
 import { get_current_component, set_current_component } from './lifecycle.js';
 
+const resolved_promises = new WeakMap();
+const rejected_promises = new WeakMap();
+
 /**
  * @template T
  * @param {Promise<T>} promise
@@ -57,25 +60,40 @@ export function handle_promise(promise, info) {
 	}
 	if (is_promise(promise)) {
 		const current_component = get_current_component();
-		promise.then(
-			(value) => {
-				set_current_component(current_component);
-				update(info.then, 1, info.value, value);
-				set_current_component(null);
-			},
-			(error) => {
-				set_current_component(current_component);
-				update(info.catch, 2, info.error, error);
-				set_current_component(null);
-				if (!info.hasCatch) {
-					throw error;
-				}
+
+		function update_resolved_promise_value(value) {
+			set_current_component(current_component);
+			update(info.then, 1, info.value, value);
+			set_current_component(null);
+		}
+
+		function update_rejected_promise_error(error) {
+			set_current_component(current_component);
+			update(info.catch, 2, info.error, error);
+			set_current_component(null);
+			if (!info.hasCatch) {
+				throw error;
 			}
-		);
-		// if we previously had a then/catch block, destroy it
-		if (info.current !== info.pending) {
-			update(info.pending, 0);
-			return true;
+		}
+
+		if (resolved_promises.has(promise)) {
+			update_resolved_promise_value(resolved_promises.get(promise));
+		} else if (rejected_promises.has(promise)) {
+			update_rejected_promise_error(rejected_promises.get(promise));
+		} else {
+			promise.then(value => {
+				update_resolved_promise_value(value);
+				resolved_promises.set(promise, value);
+			}, error => {
+				update_rejected_promise_error(error);
+				rejected_promises.set(promise, error);
+			});
+
+			// if we previously had a then/catch block, destroy it
+			if (info.current !== info.pending) {
+				update(info.pending, 0);
+				return true;
+			}
 		}
 	} else {
 		if (info.current !== info.then) {
