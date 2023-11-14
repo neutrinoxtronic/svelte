@@ -1,18 +1,16 @@
-import { error } from '../../errors.js';
-import { extract_identifiers, is_text_attribute } from '../../utils/ast.js';
-import { warn } from '../../warnings.js';
-import fuzzymatch from '../1-parse/utils/fuzzymatch.js';
-import { binding_properties } from '../bindings.js';
-import { SVGElements } from '../constants.js';
-import { is_custom_element_node } from '../nodes.js';
-import { regex_not_whitespace, regex_only_whitespaces } from '../patterns.js';
-import { Scope, get_rune } from '../scope.js';
-import { merge } from '../visitors.js';
-import { a11y_validators } from './a11y.js';
+import { error } from '../../../errors.js';
+import { is_text_attribute } from '../../../utils/ast.js';
+import { warn } from '../../../warnings.js';
+import fuzzymatch from '../../1-parse/utils/fuzzymatch.js';
+import { binding_properties } from '../../bindings.js';
+import { SVGElements } from '../../constants.js';
+import { is_custom_element_node } from '../../nodes.js';
+import { regex_not_whitespace, regex_only_whitespaces } from '../../patterns.js';
+import { validate_no_const_assignment } from '../utils.js';
 
 /**
  * @param {import('#compiler').Component | import('#compiler').SvelteComponent | import('#compiler').SvelteSelf} node
- * @param {import('zimmerframe').Context<import('#compiler').SvelteNode, import('./types.js').AnalysisState>} context
+ * @param {import('../types').Context} context
  */
 function validate_component(node, context) {
 	for (const attribute of node.attributes) {
@@ -36,7 +34,7 @@ function validate_component(node, context) {
 
 /**
  * @param {import('#compiler').RegularElement | import('#compiler').SvelteElement} node
- * @param {import('zimmerframe').Context<import('#compiler').SvelteNode, import('./types.js').AnalysisState>} context
+ * @param {import('../types').Context} context
  */
 function validate_element(node, context) {
 	for (const attribute of node.attributes) {
@@ -55,7 +53,7 @@ function validate_element(node, context) {
 }
 
 /**
- * @param {import('zimmerframe').Context<import('#compiler').SvelteNode, import('./types.js').AnalysisState>} context
+ * @param {import('../types').Context} context
  * @param {import('#compiler').Attribute} attribute
  */
 function validate_slot_attribute(context, attribute) {
@@ -235,9 +233,9 @@ function is_tag_valid_with_parent(tag, parent_tag) {
 }
 
 /**
- * @type {import('zimmerframe').Visitors<import('#compiler').SvelteNode, import('./types.js').AnalysisState>}
+ * @type {import('../types').Visitors}
  */
-export const validation = {
+export const validate_template = {
 	Attribute(node) {
 		if (node.name.startsWith('on') && node.name.length > 2) {
 			if (node.value === true || is_text_attribute(node) || node.value.length > 1) {
@@ -437,286 +435,3 @@ export const validation = {
 		}
 	}
 };
-
-export const validation_legacy = merge(validation, a11y_validators, {
-	VariableDeclarator(node) {
-		if (node.init?.type !== 'CallExpression') return;
-
-		const callee = node.init.callee;
-		if (
-			callee.type !== 'Identifier' ||
-			(callee.name !== '$state' && callee.name !== '$derived' && callee.name !== '$props')
-		) {
-			return;
-		}
-
-		// TODO check if it's a store subscription that's called? How likely is it that someone uses a store that contains a function?
-		error(node.init, 'invalid-rune-usage', callee.name);
-	},
-	ExportNamedDeclaration(node) {
-		if (
-			node.declaration &&
-			node.declaration.type !== 'VariableDeclaration' &&
-			node.declaration.type !== 'FunctionDeclaration'
-		) {
-			error(node, 'TODO', 'whatever this is');
-		}
-	},
-	AssignmentExpression(node, { state, path }) {
-		const parent = path.at(-1);
-		if (parent && parent.type === 'ConstTag') return;
-		validate_assignment(node, node.left, state);
-	},
-	UpdateExpression(node, { state }) {
-		validate_assignment(node, node.argument, state);
-	}
-});
-
-/**
- *
- * @param {import('estree').Node} node
- * @param {import('../scope').Scope} scope
- * @param {string} name
- */
-function validate_export(node, scope, name) {
-	const binding = scope.get(name);
-	if (binding && (binding.kind === 'derived' || binding.kind === 'state')) {
-		error(node, 'invalid-rune-export', `$${binding.kind}`);
-	}
-}
-
-/**
- * @param {import('estree').CallExpression} node
- * @param {Scope} scope
- * @param {import('#compiler').SvelteNode[]} path
- * @returns
- */
-function validate_call_expression(node, scope, path) {
-	const rune = get_rune(node, scope);
-	if (rune === null) return;
-
-	if (rune === '$props' && path.at(-1)?.type !== 'VariableDeclarator') {
-		error(node, 'invalid-props-location');
-	} else if (
-		(rune === '$state' || rune === '$derived') &&
-		path.at(-1)?.type !== 'VariableDeclarator' &&
-		path.at(-1)?.type !== 'PropertyDefinition'
-	) {
-		error(node, rune === '$derived' ? 'invalid-derived-location' : 'invalid-state-location');
-	} else if (rune === '$effect') {
-		if (path.at(-1)?.type !== 'ExpressionStatement') {
-			error(node, 'invalid-effect-location');
-		} else if (node.arguments.length !== 1) {
-			error(node, 'invalid-rune-args-length', '$effect', [1]);
-		}
-	}
-}
-
-/**
- * @type {import('zimmerframe').Visitors<import('#compiler').SvelteNode, import('./types.js').AnalysisState>}
- */
-export const validation_runes_js = {
-	ExportSpecifier(node, { state }) {
-		validate_export(node, state.scope, node.local.name);
-	},
-	ExportNamedDeclaration(node, { state, next }) {
-		if (node.declaration?.type !== 'VariableDeclaration') return;
-
-		// visit children, so bindings are correctly initialised
-		next();
-
-		for (const declarator of node.declaration.declarations) {
-			for (const id of extract_identifiers(declarator.id)) {
-				validate_export(node, state.scope, id.name);
-			}
-		}
-	},
-	CallExpression(node, { state, path }) {
-		validate_call_expression(node, state.scope, path);
-	},
-	VariableDeclarator(node, { state }) {
-		const init = node.init;
-		const rune = get_rune(init, state.scope);
-
-		if (rune === null) return;
-
-		const args = /** @type {import('estree').CallExpression} */ (init).arguments;
-
-		if (rune === '$derived' && args.length !== 1) {
-			error(node, 'invalid-rune-args-length', '$derived', [1]);
-		} else if (rune === '$state' && args.length > 1) {
-			error(node, 'invalid-rune-args-length', '$state', [0, 1]);
-		} else if (rune === '$props') {
-			error(node, 'invalid-props-location');
-		}
-	},
-	AssignmentExpression(node, { state }) {
-		validate_assignment(node, node.left, state);
-	},
-	UpdateExpression(node, { state }) {
-		validate_assignment(node, node.argument, state);
-	}
-};
-
-/**
- * @param {import('../../errors.js').NodeLike} node
- * @param {import('estree').Pattern | import('estree').Expression} argument
- * @param {Scope} scope
- * @param {boolean} is_binding
- */
-function validate_no_const_assignment(node, argument, scope, is_binding) {
-	if (argument.type === 'Identifier') {
-		const binding = scope.get(argument.name);
-		if (binding?.declaration_kind === 'const' && binding.kind !== 'each') {
-			error(
-				node,
-				'invalid-const-assignment',
-				is_binding,
-				// This takes advantage of the fact that we don't assign initial for let directives and then/catch variables.
-				// If we start doing that, we need another property on the binding to differentiate, or give up on the more precise error message.
-				binding.kind !== 'state' && (binding.kind !== 'normal' || !binding.initial)
-			);
-		}
-	}
-}
-
-/**
- * @param {import('estree').AssignmentExpression | import('estree').UpdateExpression} node
- * @param {import('estree').Pattern | import('estree').Expression} argument
- * @param {import('./types.js').AnalysisState} state
- */
-function validate_assignment(node, argument, state) {
-	validate_no_const_assignment(node, argument, state.scope, false);
-
-	let left = /** @type {import('estree').Expression | import('estree').Super} */ (argument);
-
-	/** @type {import('estree').Expression | import('estree').PrivateIdentifier | null} */
-	let property = null;
-
-	while (left.type === 'MemberExpression') {
-		property = left.property;
-		left = left.object;
-	}
-
-	if (left.type === 'Identifier') {
-		const binding = state.scope.get(left.name);
-		if (binding?.kind === 'derived') {
-			error(node, 'invalid-derived-assignment');
-		}
-	}
-
-	if (left.type === 'ThisExpression' && property?.type === 'PrivateIdentifier') {
-		if (state.private_derived_state.includes(property.name)) {
-			error(node, 'invalid-derived-assignment');
-		}
-	}
-}
-
-export const validation_runes = merge(validation, a11y_validators, {
-	AssignmentExpression(node, { state, path }) {
-		const parent = path.at(-1);
-		if (parent && parent.type === 'ConstTag') return;
-		validate_assignment(node, node.left, state);
-	},
-	UpdateExpression(node, { state }) {
-		validate_assignment(node, node.argument, state);
-	},
-	LabeledStatement(node, { path }) {
-		if (node.label.name !== '$' || path.at(-1)?.type !== 'Program') return;
-		error(node, 'invalid-legacy-reactive-statement');
-	},
-	ExportNamedDeclaration(node, { state }) {
-		if (node.declaration?.type !== 'VariableDeclaration') return;
-		if (node.declaration.kind !== 'let') return;
-		if (state.analysis.instance.scope !== state.scope) return;
-		error(node, 'invalid-legacy-export');
-	},
-	ExportSpecifier(node, { state }) {
-		validate_export(node, state.scope, node.local.name);
-	},
-	CallExpression(node, { state, path }) {
-		validate_call_expression(node, state.scope, path);
-	},
-	EachBlock(node, { next, state }) {
-		const context = node.context;
-		if (
-			context.type === 'Identifier' &&
-			(context.name === '$state' || context.name === '$derived')
-		) {
-			error(
-				node,
-				context.name === '$derived' ? 'invalid-derived-location' : 'invalid-state-location'
-			);
-		}
-		next({ ...state });
-	},
-	VariableDeclarator(node, { state }) {
-		const init = node.init;
-		const rune = get_rune(init, state.scope);
-
-		if (rune === null) return;
-
-		const args = /** @type {import('estree').CallExpression} */ (init).arguments;
-
-		if (rune === '$derived' && args.length !== 1) {
-			error(node, 'invalid-rune-args-length', '$derived', [1]);
-		} else if (rune === '$state' && args.length > 1) {
-			error(node, 'invalid-rune-args-length', '$state', [0, 1]);
-		} else if (rune === '$props') {
-			if (state.has_props_rune) {
-				error(node, 'duplicate-props-rune');
-			}
-
-			state.has_props_rune = true;
-
-			if (args.length > 0) {
-				error(node, 'invalid-rune-args-length', '$props', [0]);
-			}
-
-			if (node.id.type !== 'ObjectPattern') {
-				error(node, 'invalid-props-id');
-			}
-
-			if (state.scope !== state.analysis.instance.scope) {
-				error(node, 'invalid-props-location');
-			}
-
-			for (const property of node.id.properties) {
-				if (property.type === 'Property') {
-					if (property.computed) {
-						error(property, 'invalid-props-pattern');
-					}
-
-					const value =
-						property.value.type === 'AssignmentPattern' ? property.value.left : property.value;
-
-					if (value.type !== 'Identifier') {
-						error(property, 'invalid-props-pattern');
-					}
-				}
-			}
-		}
-	},
-	ClassBody(node, context) {
-		/** @type {string[]} */
-		const private_derived_state = [];
-
-		for (const definition of node.body) {
-			if (
-				definition.type === 'PropertyDefinition' &&
-				definition.key.type === 'PrivateIdentifier' &&
-				definition.value?.type === 'CallExpression'
-			) {
-				const rune = get_rune(definition.value, context.state.scope);
-				if (rune === '$derived') {
-					private_derived_state.push(definition.key.name);
-				}
-			}
-		}
-
-		context.next({
-			...context.state,
-			private_derived_state
-		});
-	}
-});
