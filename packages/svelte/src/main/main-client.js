@@ -54,17 +54,11 @@ export function onDestroy(fn) {
 }
 
 /**
- * Retrieves the context that belongs to the closest parent component with the specified `key`.
- * Must be called during component initialisation.
- *
- * https://svelte.dev/docs/svelte#getcontext
- * @template T
  * @param {any} key
- * @returns {T}
  */
 export function getContext(key) {
 	const context_map = get_or_init_context_map();
-	return /** @type {T} */ (context_map.get(key));
+	return context_map.get(key);
 }
 
 /**
@@ -76,7 +70,7 @@ export function getContext(key) {
  *
  * https://svelte.dev/docs/svelte#setcontext
  * @template T
- * @param {any} key
+ * @param {{} | import('./public.js').ContextKey<T>} key
  * @param {T} context
  * @returns {T}
  */
@@ -91,8 +85,9 @@ export function setContext(key, context) {
  * Must be called during component initialisation.
  *
  * https://svelte.dev/docs/svelte#hascontext
- * @param {any} key
- * @returns {boolean}
+ * @template T
+ * @param {{} | import('./public.js').ContextKey<T>} key
+ * @returns {key is import('./public.js').CheckedContextKey<T>}
  */
 export function hasContext(key) {
 	const context_map = get_or_init_context_map();
