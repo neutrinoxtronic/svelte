@@ -225,6 +225,17 @@ declare module 'svelte' {
 					: [type: Type, parameter: EventMap[Type], options?: DispatchOptions]
 		): boolean;
 	}
+
+	/**
+	 * Can be used to type `getContext`/`setContext`:
+	 * ```ts
+	 * import { getContext, setContext, type ContextKey } from 'svelte';
+	 * const context_key: ContextKey<boolean> = Symbol('my boolean context key');
+	 * setContext(context_key, true);
+	 * const value = getContext(context_key); // infered as boolean | undefined
+	 * ```
+	 */
+	export interface ContextKey<T> extends Symbol {}
 	/**
 	 * The `onMount` function schedules a callback to run as soon as the component has been mounted to the DOM.
 	 * It must be called during the component's initialisation (but doesn't need to live *inside* the component;
@@ -297,6 +308,9 @@ declare module 'svelte' {
 	export function flushSync(fn?: (() => void) | undefined): void;
 	/** Anything except a function */
 	type NotFunction<T> = T extends Function ? never : T;
+
+	/** Helper function to detect `any` */
+	type IsAny<T> = 0 extends 1 & T ? true : false;
 	export function unstate<T>(value: T): T;
 	/**
 	 * Mounts a component to the given target and returns the exports and potentially the props (if compiled with `accessors: true`) of the component
@@ -342,7 +356,7 @@ declare module 'svelte' {
 	 *
 	 * https://svelte.dev/docs/svelte#getcontext
 	 * */
-	export function getContext<T>(key: any): T;
+	export function getContext<T, Key = any>(key: Key): ContextType<T, Key>;
 	/**
 	 * Associates an arbitrary `context` object with the current component and the specified `key`
 	 * and returns that object. The context is then available to children of the component
@@ -352,7 +366,7 @@ declare module 'svelte' {
 	 *
 	 * https://svelte.dev/docs/svelte#setcontext
 	 * */
-	export function setContext<T>(key: any, context: T): T;
+	export function setContext<T, Key = any>(key: Key, context: ContextType<T, Key>): ContextType<T, Key>;
 	/**
 	 * Checks whether a given `key` has been set in the context of a parent component.
 	 * Must be called during component initialisation.
@@ -368,6 +382,9 @@ declare module 'svelte' {
 	 * https://svelte.dev/docs/svelte#getallcontexts
 	 * */
 	export function getAllContexts<T extends Map<any, any> = Map<any, any>>(): T;
+	type ContextType<T, Key> =
+		// We need to specifically check for `any` because else it satisfies both conditions which results in the type being `unknown`
+		IsAny<Key> extends true ? T : Key extends ContextKey<infer X> ? X | undefined : T;
 }
 
 declare module 'svelte/action' {
