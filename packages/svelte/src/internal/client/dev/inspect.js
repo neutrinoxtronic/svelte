@@ -1,7 +1,6 @@
-import { snapshot } from '../proxy.js';
+import { snapshot } from '../reactivity/snapshot.js';
 import { render_effect } from '../reactivity/effects.js';
 import { current_effect, deep_read } from '../runtime.js';
-import { array_prototype, get_prototype_of, object_prototype } from '../utils.js';
 
 /** @type {Function | null} */
 export let inspect_fn = null;
@@ -32,12 +31,15 @@ export function inspect(get_value, inspector = console.log) {
 	// calling `inspector` directly inside the effect, so that
 	// we get useful stack traces
 	var fn = () => {
-		const value = deep_snapshot(get_value());
+		const value = snapshot(get_value(), true);
 		inspector(initial ? 'init' : 'update', ...value);
 	};
 
 	render_effect(() => {
 		inspect_fn = fn;
+		// TODO ideally we'd use `snapshot` here instead of `deep_read`, and pass
+		// the result to `fn` on the initial run, but it doesn't work because
+		// of some weird (and possibly buggy?) behaviour around `batch_inspect`
 		deep_read(get_value());
 		inspect_fn = null;
 
@@ -55,44 +57,4 @@ export function inspect(get_value, inspector = console.log) {
 			}
 		};
 	});
-}
-
-/**
- * Like `snapshot`, but recursively traverses into normal arrays/objects to find potential states in them.
- * @param {any} value
- * @param {Map<any, any>} visited
- * @returns {any}
- */
-function deep_snapshot(value, visited = new Map()) {
-	if (typeof value === 'object' && value !== null && !visited.has(value)) {
-		const unstated = snapshot(value);
-
-		if (unstated !== value) {
-			visited.set(value, unstated);
-			return unstated;
-		}
-
-		const prototype = get_prototype_of(value);
-
-		// Only deeply snapshot plain objects and arrays
-		if (prototype === object_prototype || prototype === array_prototype) {
-			let contains_unstated = false;
-			/** @type {any} */
-			const nested_unstated = Array.isArray(value) ? [] : {};
-
-			for (let key in value) {
-				const result = deep_snapshot(value[key], visited);
-				nested_unstated[key] = result;
-				if (result !== value[key]) {
-					contains_unstated = true;
-				}
-			}
-
-			visited.set(value, contains_unstated ? nested_unstated : value);
-		} else {
-			visited.set(value, value);
-		}
-	}
-
-	return visited.get(value) ?? value;
 }

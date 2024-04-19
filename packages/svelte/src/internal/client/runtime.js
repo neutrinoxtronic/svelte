@@ -1,6 +1,6 @@
 import { DEV } from 'esm-env';
 import { get_descriptors, get_prototype_of, is_frozen, object_freeze } from './utils.js';
-import { snapshot } from './proxy.js';
+import { snapshot } from './reactivity/snapshot.js';
 import { destroy_effect, effect, execute_effect_teardown } from './reactivity/effects.js';
 import {
 	EFFECT,
@@ -15,7 +15,8 @@ import {
 	BRANCH_EFFECT,
 	STATE_SYMBOL,
 	BLOCK_EFFECT,
-	ROOT_EFFECT
+	ROOT_EFFECT,
+	STATE_SNAPSHOT_SYMBOL
 } from './constants.js';
 import { flush_tasks } from './dom/task.js';
 import { add_owner } from './dev/ownership.js';
@@ -125,9 +126,8 @@ export function is_runes() {
  */
 export function batch_inspect(target, prop, receiver) {
 	const value = Reflect.get(target, prop, receiver);
-	/**
-	 * @this {any}
-	 */
+
+	/** @this {any} */
 	return function () {
 		const previously_batching_effect = is_batching_effect;
 		is_batching_effect = true;
@@ -1138,6 +1138,12 @@ export function deep_read(value, visited = new Set()) {
 		!visited.has(value)
 	) {
 		visited.add(value);
+
+		if (STATE_SNAPSHOT_SYMBOL in value) {
+			value[STATE_SNAPSHOT_SYMBOL](true);
+			return;
+		}
+
 		for (let key in value) {
 			try {
 				deep_read(value[key], visited);
@@ -1145,6 +1151,7 @@ export function deep_read(value, visited = new Set()) {
 				// continue
 			}
 		}
+
 		const proto = get_prototype_of(value);
 		if (
 			proto !== Object.prototype &&
