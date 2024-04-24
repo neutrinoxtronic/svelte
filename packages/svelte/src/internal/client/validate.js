@@ -1,3 +1,4 @@
+import { is_snippet } from './dom/blocks/snippet.js';
 import { untrack } from './runtime.js';
 import { get_descriptor, is_array } from './utils.js';
 

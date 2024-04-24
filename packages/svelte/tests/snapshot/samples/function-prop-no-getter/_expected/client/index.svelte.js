@@ -20,12 +20,12 @@ function Function_prop_no_getter($$anchor, $$props) {
 		onmousedown: () => $.set(count, $.get(count) + 1),
 		onmouseup,
 		onmouseenter: () => $.set(count, $.proxy(plusOne($.get(count)))),
-		children: ($$anchor, $$slotProps) => {
+		children: $.add_snippet_symbol(($$anchor, $$slotProps) => {
 			var text = $.text($$anchor);
 
 			$.render_effect(() => $.set_text(text, `clicks: ${$.stringify($.get(count))}`));
 			$.append($$anchor, text);
-		}
+		})
 	});
 
 	$.append($$anchor, fragment);

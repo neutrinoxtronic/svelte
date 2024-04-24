@@ -9,6 +9,10 @@ import {
 	is_tag_valid_with_parent
 } from '../../constants.js';
 import { DEV } from 'esm-env';
+
+export * from '../client/validate.js';
+export { add_snippet_symbol } from '../client/dom/blocks/snippet.js';
+export { default_slot } from '../client/dom/legacy/misc.js';
 import { current_component, pop, push } from './context.js';
 import { BLOCK_CLOSE, BLOCK_OPEN } from './hydration.js';
 
@@ -670,7 +674,6 @@ export function once(get_value) {
 export { push, pop } from './context.js';
 
 export {
-	add_snippet_symbol,
 	validate_component,
 	validate_dynamic_element_tag,
 	validate_snippet,

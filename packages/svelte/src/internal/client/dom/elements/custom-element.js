@@ -1,5 +1,6 @@
 import { createClassComponent } from '../../../../legacy/legacy-client.js';
 import { destroy_effect, render_effect } from '../../reactivity/effects.js';
+import { add_snippet_symbol } from '../blocks/snippet.js';
 import { append } from '../template.js';
 import { define_property, object_keys } from '../../utils.js';
 
@@ -109,8 +110,8 @@ if (typeof HTMLElement === 'function') {
 				const existing_slots = get_custom_elements_slots(this);
 				for (const name of this.$$s) {
 					if (name in existing_slots) {
-						if (name === 'default') {
-							this.$$d.children = create_slot(name);
+						if (name === 'default' && !this.$$d.children) {
+							this.$$d.children = add_snippet_symbol(create_slot(name));
 						} else {
 							$$slots[name] = create_slot(name);
 						}
