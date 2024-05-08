@@ -1249,10 +1249,10 @@ const template_visitors = {
 	},
 	HtmlTag(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!state.optimisation_oneling) state.template.push(block_open);
 		const raw = /** @type {import('estree').Expression} */ (context.visit(node.expression));
 		context.state.template.push(t_expression(raw));
-		state.template.push(block_close);
+		if (!state.optimisation_oneling) state.template.push(block_close);
 	},
 	ConstTag(node, { state, visit }) {
 		const declaration = node.declaration.declarations[0];
@@ -1284,7 +1284,7 @@ const template_visitors = {
 	RenderTag(node, context) {
 		const state = context.state;
 
-		state.template.push(block_open);
+		if (!state.optimisation_oneling) state.template.push(block_open);
 
 		const callee = unwrap_optional(node.expression).callee;
 		const raw_args = unwrap_optional(node.expression).arguments;
@@ -1310,7 +1310,7 @@ const template_visitors = {
 			)
 		);
 
-		state.template.push(block_close);
+		if (!state.optimisation_oneling) state.template.push(block_close);
 	},
 	ClassDirective(node) {
 		throw new Error('Node should have been handled elsewhere');
@@ -1358,6 +1358,21 @@ const template_visitors = {
 			state.preserve_whitespace,
 			state.options.preserveComments
 		);
+
+		const optimisation_oneling =
+			trimmed.length === 1 &&
+			(trimmed[0].type === 'Component' ||
+				trimmed[0].type === 'HtmlTag' ||
+				trimmed[0].type === 'RenderTag' ||
+				trimmed[0].type === 'IfBlock' ||
+				trimmed[0].type === 'AwaitBlock' ||
+				trimmed[0].type === 'KeyBlock' ||
+				trimmed[0].type === 'EachBlock' ||
+				trimmed[0].type === 'SvelteSelf' ||
+				trimmed[0].type === 'SvelteElement' ||
+				trimmed[0].type === 'SvelteComponent' ||
+				trimmed[0].type === 'SlotElement');
+		state.optimisation_oneling = optimisation_oneling;
 
 		for (const node of hoisted) {
 			inner_context.visit(node, state);
@@ -1435,7 +1450,7 @@ const template_visitors = {
 			}
 		};
 
-		context.state.template.push(block_open);
+		if (!context.state.optimisation_oneling) context.state.template.push(block_open);
 
 		const main = create_block(node, node.fragment.nodes, {
 			...context,
@@ -1470,16 +1485,16 @@ const template_visitors = {
 						)
 					)
 				)
-			),
-			block_close
+			)
 		);
+		if (!context.state.optimisation_oneling) context.state.template.push(block_close);
 		if (context.state.options.dev) {
 			context.state.template.push(t_statement(b.stmt(b.call('$.pop_element'))));
 		}
 	},
 	EachBlock(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!context.state.optimisation_oneling) state.template.push(block_open);
 
 		const each_node_meta = node.metadata;
 		const collection = /** @type {import('estree').Expression} */ (context.visit(node.expression));
@@ -1529,23 +1544,25 @@ const template_visitors = {
 				t_statement(
 					b.if(
 						b.binary('!==', b.member(array_id, b.id('length')), b.literal(0)),
-						b.block([for_loop, close]),
+						b.block(!context.state.optimisation_oneling ? [for_loop, close] : [for_loop]),
 						b.block(fallback)
 					)
 				)
 			);
 		} else {
-			state.template.push(t_statement(for_loop), t_statement(close));
+			state.template.push(t_statement(for_loop));
+			if (!context.state.optimisation_oneling) state.template.push(t_statement(close));
 		}
 	},
 	IfBlock(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!context.state.optimisation_oneling) state.template.push(block_open);
 
 		const consequent = create_block(node, node.consequent.nodes, context);
 		const alternate = node.alternate ? create_block(node, node.alternate.nodes, context) : [];
 
-		consequent.push(b.stmt(b.assignment('+=', b.id('$$payload.out'), b.literal(BLOCK_CLOSE))));
+		if (!context.state.optimisation_oneling)
+			consequent.push(b.stmt(b.assignment('+=', b.id('$$payload.out'), b.literal(BLOCK_CLOSE))));
 		alternate.push(b.stmt(b.assignment('+=', b.id('$$payload.out'), b.literal(BLOCK_CLOSE_ELSE))));
 
 		state.template.push(
@@ -1560,7 +1577,7 @@ const template_visitors = {
 	},
 	AwaitBlock(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!context.state.optimisation_oneling) state.template.push(block_open);
 
 		state.template.push(
 			t_statement(
@@ -1594,14 +1611,14 @@ const template_visitors = {
 			)
 		);
 
-		state.template.push(block_close);
+		if (!context.state.optimisation_oneling) state.template.push(block_close);
 	},
 	KeyBlock(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!state.optimisation_oneling) state.template.push(block_open);
 		const body = create_block(node, node.fragment.nodes, context);
 		state.template.push(t_statement(b.block(body)));
-		state.template.push(block_close);
+		if (!state.optimisation_oneling) state.template.push(block_close);
 	},
 	SnippetBlock(node, context) {
 		const fn = b.function_declaration(
@@ -1620,28 +1637,28 @@ const template_visitors = {
 	},
 	Component(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!context.state.optimisation_oneling) state.template.push(block_open);
 		const call = serialize_inline_component(node, node.name, context);
 		state.template.push(t_statement(call));
-		state.template.push(block_close);
+		if (!context.state.optimisation_oneling) state.template.push(block_close);
 	},
 	SvelteSelf(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!context.state.optimisation_oneling) state.template.push(block_open);
 		const call = serialize_inline_component(node, context.state.analysis.name, context);
 		state.template.push(t_statement(call));
-		state.template.push(block_close);
+		if (!context.state.optimisation_oneling) state.template.push(block_close);
 	},
 	SvelteComponent(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!state.optimisation_oneling) state.template.push(block_open);
 		const call = serialize_inline_component(
 			node,
 			/** @type {import('estree').Expression} */ (context.visit(node.expression)),
 			context
 		);
 		state.template.push(t_statement(call));
-		state.template.push(block_close);
+		if (!state.optimisation_oneling) state.template.push(block_close);
 	},
 	LetDirective(node, { state }) {
 		if (node.expression && node.expression.type !== 'Identifier') {
@@ -1724,7 +1741,7 @@ const template_visitors = {
 	},
 	SlotElement(node, context) {
 		const state = context.state;
-		state.template.push(block_open);
+		if (!state.optimisation_oneling) state.template.push(block_open);
 
 		/** @type {import('estree').Property[]} */
 		const props = [];
@@ -1771,7 +1788,7 @@ const template_visitors = {
 		const slot = b.call('$.slot', b.id('$$payload'), expression, props_expression, fallback);
 
 		state.template.push(t_statement(b.stmt(slot)));
-		state.template.push(block_close);
+		if (!state.optimisation_oneling) state.template.push(block_close);
 	},
 	SvelteHead(node, context) {
 		const state = context.state;
