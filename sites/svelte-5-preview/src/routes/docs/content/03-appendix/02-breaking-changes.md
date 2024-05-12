@@ -158,9 +158,9 @@ In the event that you need to support ancient browsers that don't implement `:wh
 css = css.replace(/:where\((.+?)\)/, '$1');
 ```
 
-### Renames of various error/warning codes
+### Renames of error/warning codes
 
-Various error and warning codes have been renamed slightly.
+Error and warning codes have been renamed: Instead of using dashes they now use underscores as separators (e.g. `a11y_misplaced_scope` instead of `a11y-misplaced-scope`). Some codes have also been slightly reworded. For backwards compatibility, dash separators are still supported, but you should migrate towards underscores.
 
 ### Reduced number of namespaces
 

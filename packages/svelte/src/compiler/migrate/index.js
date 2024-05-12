@@ -4,9 +4,10 @@ import { parse } from '../phases/1-parse/index.js';
 import { analyze_component } from '../phases/2-analyze/index.js';
 import { validate_component_options } from '../validate-options.js';
 import { get_rune } from '../phases/scope.js';
-import { reset_warnings } from '../warnings.js';
+import { legacy_to_new_code, reset_warnings } from '../warnings.js';
 import { extract_identifiers } from '../utils/ast.js';
 import { regex_is_valid_identifier } from '../phases/patterns.js';
+import { extract_svelte_ignore } from '../utils/extract_svelte_ignore.js';
 
 /**
  * Does a best-effort migration of Svelte code towards using runes, event attributes and render tags.
@@ -174,6 +175,30 @@ export function migrate(source) {
 
 /** @type {import('zimmerframe').Visitors<import('../types/template.js').SvelteNode, State>} */
 const instance_script = {
+	_(node, { state, next }) {
+		// @ts-expect-error
+		const comments = node.leadingComments;
+		if (comments) {
+			for (const comment of comments) {
+				if (comment.type === 'Line') {
+					/** @type {string} */
+					const text = comment.value;
+					const ignores = extract_svelte_ignore(text);
+					if (ignores.length > 0) {
+						const svelte_ignore = text.indexOf('svelte-ignore');
+						state.str.overwrite(
+							comment.start + svelte_ignore + 13 + '//'.length,
+							comment.end,
+							text
+								.substring(svelte_ignore + 13)
+								.replace(new RegExp(ignores.join('|'), 'g'), (match) => legacy_to_new_code(match))
+						);
+					}
+				}
+			}
+		}
+		next();
+	},
 	Identifier(node, { state }) {
 		handle_identifier(node, state);
 	},
@@ -473,6 +498,19 @@ const template = {
 			state.str.update(node.fragment.nodes[node.fragment.nodes.length - 1].end, node.end, '{/if}');
 		} else {
 			state.str.update(node.start, node.end, `{@render ${name}?.(${slot_props})}`);
+		}
+	},
+	Comment(node, { state }) {
+		const ignores = extract_svelte_ignore(node.data);
+		if (ignores.length > 0) {
+			const svelte_ignore = node.data.indexOf('svelte-ignore');
+			state.str.overwrite(
+				node.start + svelte_ignore + 13 + '<!--'.length,
+				node.end - '-->'.length,
+				node.data
+					.substring(svelte_ignore + 13)
+					.replace(new RegExp(ignores.join('|'), 'g'), (match) => legacy_to_new_code(match))
+			);
 		}
 	}
 };
