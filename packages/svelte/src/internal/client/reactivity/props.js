@@ -147,23 +147,51 @@ export function legacy_rest_props(props, exclude) {
  * that looks like `() => { dynamic: props }, { static: prop }, ..` and wraps
  * them so that the whole thing is passed to the component as the `$$props` argument.
  * @template {Record<string | symbol, unknown>} T
- * @type {ProxyHandler<{ props: Array<T | (() => T)> }>}}
+ * @type {ProxyHandler<{ props: (Array<T | (() => T)>), keys: (Array<(() => import('./types.js').Value<string>) | undefined>) }>}}
  */
 const spread_props_handler = {
 	get(target, key) {
 		let i = target.props.length;
 		while (i--) {
 			let p = target.props[i];
-			if (is_function(p)) p = p();
-			if (typeof p === 'object' && p !== null && key in p) return p[key];
+			let obj = p;
+			// in case the prop is the spread prop calling the function
+			// will track that state as a dep even if the requested key
+			// is not in it. to avoid that we call the function in untrack
+			// and check on the object. If it's there we call the function again
+			// to track and then access the key
+			untrack(() => {
+				if (is_function(p)) obj = p();
+			});
+			const keys_function = target.keys[i];
+			if (typeof obj === 'object' && obj !== null && key in obj) {
+				if (is_function(p)) {
+					p = p();
+				}
+				return p[key];
+			} else if (keys_function && is_function(keys_function)) get(keys_function());
 		}
 	},
 	getOwnPropertyDescriptor(target, key) {
 		let i = target.props.length;
 		while (i--) {
 			let p = target.props[i];
-			if (is_function(p)) p = p();
-			if (typeof p === 'object' && p !== null && key in p) return get_descriptor(p, key);
+			let obj = p;
+			// in case the prop is the spread prop calling the function
+			// will track that state as a dep even if the requested key
+			// is not in it. to avoid that we call the function in untrack
+			// and check on the object. If it's there we call the function again
+			// to track and then access the key
+			untrack(() => {
+				if (is_function(p)) obj = p();
+			});
+			const keys_function = target.keys[i];
+			if (typeof obj === 'object' && obj !== null && key in obj) {
+				if (is_function(p)) {
+					p = p();
+				}
+				return get_descriptor(p, key);
+			} else if (keys_function && is_function(keys_function)) get(keys_function());
 		}
 	},
 	has(target, key) {
@@ -191,10 +219,11 @@ const spread_props_handler = {
 
 /**
  * @param {Array<Record<string, unknown> | (() => Record<string, unknown>)>} props
+ * @param {(Array<(() => import('./types.js').Value<string>) | undefined>)} keys
  * @returns {any}
  */
-export function spread_props(...props) {
-	return new Proxy({ props }, spread_props_handler);
+export function spread_props(props, keys) {
+	return new Proxy({ props, keys }, spread_props_handler);
 }
 
 /**
